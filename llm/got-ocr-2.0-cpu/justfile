@@ -4,4 +4,4 @@ default:
 
 # Start the server
 serve:
-    uv run uvicorn api_server:app --host 0.0.0.0 --port 8000 --reload
+    uv run uvicorn api_server:app --host 0.0.0.0 --port 40123 --reload

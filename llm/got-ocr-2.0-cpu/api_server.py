@@ -1,42 +1,43 @@
+import time
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.concurrency import asynccontextmanager
-from fastapi.responses import HTMLResponse
-import os
-import uuid
 import base64
 from typing import Optional
 from enum import Enum
-from transformers import AutoModel, AutoTokenizer
 import shutil
-import tempfile
+from io import BytesIO
 from pydantic import BaseModel, Field
+from bookxnote_local_ocr_openapi.server_sdk.service.service import (
+    AbstractRootService as AbstractBookxnoteLocalOCRService,
+)
+from bookxnote_local_ocr_openapi.server_sdk import ApiAuth as BookxnoteLocalOCRApiAuth
+from bookxnote_local_ocr_openapi.server_sdk.types.post_ocr_by_bxn_local_ocr_response import (
+    PostOcrByBxnLocalOcrResponse,
+)
+from bookxnote_local_ocr_openapi.server_sdk.types.post_ocr_by_bxn_local_ocr_response_data import (
+    PostOcrByBxnLocalOcrResponseData,
+)
+from bookxnote_local_ocr_openapi.server_sdk.errors import (
+    BadRequestError as BxnLocalOCRBadRequestError,
+)
+from bookxnote_local_ocr_openapi.server_sdk.types.bad_request_error_body import (
+    BadRequestErrorBody as BxnLocalOCRBadRequestErrorBody,
+)
+from bookxnote_local_ocr_openapi.server_sdk.register import (
+    register as register_bookxnote_local_ocr,
+)
+
+from core import GOTOCRProcessor
 
 
-MODEL_CACHE = {}
-
-
-def get_model_and_tokenizer():
-    cache_key = "got_ocr_model"
-    if cache_key not in MODEL_CACHE:
-        tokenizer = AutoTokenizer.from_pretrained(
-            "srimanth-d/GOT_CPU", trust_remote_code=True
-        )
-        model = AutoModel.from_pretrained(
-            "srimanth-d/GOT_CPU",
-            trust_remote_code=True,
-            low_cpu_mem_usage=True,
-            use_safetensors=True,
-            pad_token_id=tokenizer.eos_token_id,
-        )
-        MODEL_CACHE[cache_key] = {"model": model.eval(), "tokenizer": tokenizer}
-    return MODEL_CACHE[cache_key]["model"], MODEL_CACHE[cache_key]["tokenizer"]
+processor = GOTOCRProcessor()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    get_model_and_tokenizer()
+    processor.get_model_and_tokenizer()  # Preload model
     yield
-    MODEL_CACHE.clear()
+    processor.clear_cache()
 
 
 app = FastAPI(
@@ -70,6 +71,37 @@ class ErrorResponse(BaseModel):
     detail: str = Field(..., description="Error message")
 
 
+def _process_image(
+    *,
+    by_file: UploadFile | None = None,
+    by_base64: str | None = None,
+    ocr_type: OcrType,
+    method: Method,
+    render: bool = False,
+    ocr_box: str | None = None,
+    ocr_color: str | None = None,
+) -> str:
+    image_buffer = BytesIO()
+    if by_file:
+        shutil.copyfileobj(by_file.file, image_buffer)
+    else:
+        if by_base64 is None:
+            raise ValueError("Base64 input is None")
+        image_buffer.write(base64.b64decode(by_base64))
+
+    image_buffer.seek(0)
+
+    result = processor.process_image(
+        image_buffer,
+        ocr_type=ocr_type.value,
+        method=method.value,
+        render=render,
+        ocr_box=ocr_box,
+        ocr_color=ocr_color,
+    )
+    return result
+
+
 @app.post("/ocr", response_model=OCRResponse)
 async def process_image(
     by_file: Optional[UploadFile] = File(None, description="Image file to process"),
@@ -93,8 +125,6 @@ async def process_image(
         None, description="Color information for fine-grained OCR (format: 'r,g,b')"
     ),
 ):
-    model, tokenizer = get_model_and_tokenizer()
-
     if by_file is None and not by_base64:
         raise HTTPException(
             status_code=400, detail="Either file or input_base64 must be provided"
@@ -106,53 +136,67 @@ async def process_image(
             detail="Render option is only available for format OCR type",
         )
 
-    temp_dir = tempfile.mkdtemp()
-    temp_file_path = None
-
     try:
-        if by_file:
-            temp_file_path = os.path.join(
-                temp_dir, by_file.filename or "uploaded_image.jpg"
-            )
-            with open(temp_file_path, "wb") as buffer:
-                shutil.copyfileobj(by_file.file, buffer)
-        else:
-            if by_base64 is None:
-                raise ValueError("Base64 input is None")
-            image_data = base64.b64decode(by_base64)
-            temp_file_path = os.path.join(temp_dir, f"base64_image_{uuid.uuid4()}.jpg")
-            with open(temp_file_path, "wb") as f:
-                f.write(image_data)
-
-        processor = model.chat_crop if method == Method.CHAT_CROP else model.chat
-        save_render_file = (
-            os.path.join(temp_dir, f"{uuid.uuid4()}.html") if render else None
+        result = _process_image(
+            by_file=by_file,
+            by_base64=by_base64,
+            ocr_type=ocr_type,
+            method=method,
+            render=render,
+            ocr_box=ocr_box,
+            ocr_color=ocr_color,
         )
 
-        kwargs = {
-            "ocr_type": ocr_type,
-            "render": render,
-            "save_render_file": save_render_file,
-        }
-
-        if ocr_box:
-            kwargs["ocr_box"] = ocr_box
-        if ocr_color:
-            kwargs["ocr_color"] = ocr_color
-
-        result = processor(tokenizer, temp_file_path, **kwargs)
-
-        if render and save_render_file and os.path.exists(save_render_file):
-            with open(save_render_file, "r") as f:
-                return HTMLResponse(content=f.read())
-
         return {"result": result}
-
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
 
-    finally:
-        if temp_dir:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+
+class BookxnoteLocalOCRService(AbstractBookxnoteLocalOCRService):
+    def post_ocr_by_bxn_local_ocr(
+        self,
+        *,
+        base64_image: str | None = Form(None),
+        auth: BookxnoteLocalOCRApiAuth,
+    ) -> PostOcrByBxnLocalOcrResponse:
+        # skip auth
+        _ = auth
+
+        if not base64_image:
+            raise BxnLocalOCRBadRequestError(
+                error=BxnLocalOCRBadRequestErrorBody(
+                    code=400,
+                    msg="base64_image is required and must non empty",
+                )
+            )
+
+        bg = time.time()
+        try:
+            result = _process_image(
+                by_base64=base64_image,
+                ocr_type=OcrType.OCR,
+                method=Method.CHAT_CROP,
+            )
+        except Exception as e:
+            raise BxnLocalOCRBadRequestError(
+                error=BxnLocalOCRBadRequestErrorBody(
+                    code=400,
+                    msg=f"Error processing image: {e!s}",
+                )
+            )
+        ed = time.time()
+
+        return PostOcrByBxnLocalOcrResponse(
+            code=0,
+            msg="success",
+            data=PostOcrByBxnLocalOcrResponseData(
+                text=result,
+                confidence=1.0,
+                time_cost=ed - bg,
+            ),
+        )
+
+
+register_bookxnote_local_ocr(app, root=BookxnoteLocalOCRService())

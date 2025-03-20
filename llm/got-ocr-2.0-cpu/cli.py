@@ -1,18 +1,10 @@
 import typer
-from typing import Optional
+from typing import Optional, Literal, cast
 from pathlib import Path
-from transformers import AutoModel, AutoTokenizer
+from core import GOTOCRProcessor
 
 app = typer.Typer()
-
-def load_model():
-    tokenizer = AutoTokenizer.from_pretrained('srimanth-d/GOT_CPU', trust_remote_code=True)
-    model = AutoModel.from_pretrained('srimanth-d/GOT_CPU',
-                                    trust_remote_code=True,
-                                    low_cpu_mem_usage=True,
-                                    use_safetensors=True,
-                                    pad_token_id=tokenizer.eos_token_id)
-    return model.eval(), tokenizer
+processor = GOTOCRProcessor()
 
 @app.command()
 def process_image(
@@ -23,25 +15,25 @@ def process_image(
     output_file: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file path")
 ):
     """Process image with GOT OCR 2.0 CPU model"""
-    model, tokenizer = load_model()
-
     if render and ocr_type != "format":
         typer.echo("Error: Render option is only available for format OCR type", err=True)
         raise typer.Abort()
 
-    # Choose processing method
-    if method == "crop":
-        processor = model.chat_crop
-    else:
-        processor = model.chat
+    # Validate and cast input types
+    if ocr_type not in ("ocr", "format"):
+        typer.echo(f"Error: Invalid OCR type '{ocr_type}'. Must be one of: ocr, format", err=True)
+        raise typer.Abort()
 
-    # Process the image
-    result = processor(
-        tokenizer,
-        str(image_path),
-        ocr_type=ocr_type,
+    if method not in ("chat", "chat_crop"):
+        typer.echo(f"Error: Invalid method '{method}'. Must be one of: chat, chat_crop", err=True)
+        raise typer.Abort()
+
+    result = processor.process_image(
+        image_path,
+        ocr_type=cast(Literal["ocr", "format"], ocr_type),
+        method=cast(Literal["chat", "chat_crop"], method),
         render=render,
-        save_render_file=str(output_file) if output_file else None
+        save_render_file=output_file
     )
 
     if output_file:

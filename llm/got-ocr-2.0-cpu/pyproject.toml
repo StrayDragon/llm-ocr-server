@@ -5,14 +5,22 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.8, <=3.11"
 dependencies = [
-    "accelerate==0.28.0",
-    "numpy<2",
-    "pillow>=10.4.0",
-    "tiktoken==0.6.0",
-    "torch==2.0.1",
-    "torchvision==0.15.2",
-    "transformers==4.37.2",
-    "verovio==4.3.1",
+  # server
+  "fastapi[standard]>=0.115.11",
+  "typer>=0.15.2",
+  "uvicorn>=0.33.0",
+  # llm
+  "accelerate==0.28.0",
+  "numpy<2",
+  "pillow>=10.4.0",
+  "tiktoken==0.6.0",
+  "torch==2.0.1",
+  "torchvision==0.15.2",
+  "transformers==4.37.2",
+  "verovio==4.3.1",
+  # external clients
+  "bookxnote_local_ocr_openapi",
+  "python-multipart>=0.0.20",
 ]
 
 [[tool.uv.index]]
@@ -21,9 +29,6 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.uv.sources]
-torch = [
-  { index = "pytorch-cpu" },
-]
-torchvision = [
-  { index = "pytorch-cpu" },
-]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+bookxnote_local_ocr_openapi = { path = "../../libs/bookxnote-local-ocr-openapi" }
