@@ -1,0 +1,8 @@
+version = 1
+revision = 1
+requires-python = ">=3.8, <=3.11"
+
+[[package]]
+name = "bookxnote-local-ocr-openapi"
+version = "0.1.2"
+source = { editable = "." }

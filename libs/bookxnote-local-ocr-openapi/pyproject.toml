@@ -1,0 +1,12 @@
+[project]
+name = "bookxnote-local-ocr-openapi"
+version = "0.1.2"
+description = "Add your description here"
+readme = "README.md"
+authors = [{ name = "straydragon", email = "straydragonl@foxmail.com" }]
+requires-python = ">=3.8, <=3.11"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -1,0 +1,5 @@
+bump-version:
+	@echo "Please modify version in pyproject.toml, due to `uv sync` ignore same version even if changed code"
+
+generate: bump-version
+	fern generate --local
