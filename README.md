@@ -1,4 +1,16 @@
-# llm-ocr-server
-a deadsimple ocr server/cli support basic ocr task and serve apis for depolying easily
+# LLM OCR Server
 
-see every models support in [llm](./llm)
+一个简单易用的 OCR 服务，提供命令行工具和 API 接口，方便快速部署和使用。
+
+## 功能特点
+
+- 🚀 简单易用：提供直观的命令行界面和 API 接口
+- 🔌 快速部署：支持本地部署和服务器部署
+- 🎯 准确识别：使用先进的 OCR 模型
+
+## 支持的模型
+
+目前支持以下 OCR 模型：
+- got-ocr-2.0-cpu：CPU 版本的 GOT OCR 2.0 模型
+
+更多模型支持请查看 [llm](./llm) 目录。
